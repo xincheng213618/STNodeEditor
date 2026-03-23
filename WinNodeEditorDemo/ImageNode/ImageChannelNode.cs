@@ -6,6 +6,7 @@ using System.Text;
 using ST.Library.UI.NodeEditor;
 using System.Drawing;
 using System.Drawing.Imaging;
+using SkiaSharp;
 
 namespace WinNodeEditorDemo.ImageNode
 {
@@ -78,10 +79,8 @@ namespace WinNodeEditorDemo.ImageNode
 
         protected override void OnDrawBody(DrawingTools dt) {
             base.OnDrawBody(dt);
-            Graphics g = dt.Graphics;
             Rectangle rect = new Rectangle(this.Left + 10, this.Top + 30, 120, 80);
-            g.FillRectangle(Brushes.Gray, rect);
-            if (m_img_draw != null) g.DrawImage(m_img_draw, rect);
+            SkiaDrawingHelper.RenderToCanvas(dt.Canvas, canvas => { using (var bg = new SKPaint { Color = SKColors.Gray, Style = SKPaintStyle.Fill, IsAntialias = true }) { canvas.DrawRect(rect.Left, rect.Top, rect.Width, rect.Height, bg); if (m_img_draw != null) { using (var bmp = SkiaDrawingHelper.ToSKBitmap(m_img_draw)) { if (bmp != null) canvas.DrawBitmap(bmp, new SKRect(rect.Left, rect.Top, rect.Right, rect.Bottom)); } } } });
         }
     }
 }

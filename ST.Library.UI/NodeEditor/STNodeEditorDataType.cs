@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.ComponentModel;
 using System.Drawing;
+using SkiaSharp;
 
 namespace ST.Library.UI.NodeEditor
 {
@@ -96,7 +97,7 @@ namespace ST.Library.UI.NodeEditor
 
     public struct DrawingTools
     {
-        public Graphics Graphics;
+        public SKCanvas Canvas;
         public Pen Pen;
         public SolidBrush SolidBrush;
     }

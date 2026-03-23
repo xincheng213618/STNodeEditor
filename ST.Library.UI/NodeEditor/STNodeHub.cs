@@ -57,9 +57,7 @@ namespace ST.Library.UI.NodeEditor
         protected override void OnOwnerChanged() {
             base.OnOwnerChanged();
             if (this.Owner == null) return;
-            using (Graphics g = this.Owner.CreateGraphics()) {
-                this.Width = base.GetDefaultNodeSize(g).Width;
-            }
+            this.Width = base.GetDefaultNodeSize().Width;
         }
 
         private void Addhub() {
