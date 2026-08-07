@@ -2961,7 +2961,9 @@ public partial class STNodeEditor : System.Windows.Controls.Control, IDisposable
 		{
 			fScale = 3f;
 		}
-		Image image = new Bitmap((int)((float)rect.Width * fScale), (int)((float)rect.Height * fScale));
+		int width = Math.Max(1, (int)Math.Ceiling(rect.Width * fScale));
+		int height = Math.Max(1, (int)Math.Ceiling(rect.Height * fScale));
+		Image image = new Bitmap(width, height);
 		using (Graphics graphics = Graphics.FromImage(image))
 		{
 			graphics.Clear(BackColor);
