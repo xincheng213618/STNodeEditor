@@ -1,22 +1,27 @@
 using System;
+using System.Drawing;
+using System.Drawing.Imaging;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using SkiaSharp;
-using SkiaSharp.Views.Desktop;
-using SkiaSharp.Views.WPF;
 using DrawingColor = System.Drawing.Color;
 using DrawingPen = System.Drawing.Pen;
+using DrawingPixelFormat = System.Drawing.Imaging.PixelFormat;
 using DrawingSolidBrush = System.Drawing.SolidBrush;
+using WpfDrawingContext = System.Windows.Media.DrawingContext;
+using WpfPixelFormats = System.Windows.Media.PixelFormats;
+using WpfRect = System.Windows.Rect;
+using WpfVisualTreeHelper = System.Windows.Media.VisualTreeHelper;
 using MediaFontFamily = System.Windows.Media.FontFamily;
 
 namespace ST.Library.UI.NodeEditor;
 
 /// <summary>
-/// Hosts the Skia-rendered value surface used by custom property descriptors
+/// Hosts the GDI-rendered value surface used by custom property descriptors
 /// and a native WPF editor when the descriptor delegates to its base click.
 /// </summary>
 internal sealed class STNodePropertyValueHost : Grid
@@ -240,7 +245,7 @@ internal sealed class STNodePropertyValueHost : Grid
 	}
 }
 
-internal sealed class STNodePropertyValuePresenter : SKElement
+internal sealed class STNodePropertyValuePresenter : FrameworkElement
 {
 	private readonly STNodePropertyValueHost _host;
 	private readonly STNodePropertyGrid _grid;
@@ -259,52 +264,68 @@ internal sealed class STNodePropertyValuePresenter : SKElement
 		Cursor = Cursors.Arrow;
 	}
 
-	protected override void OnPaintSurface(SKPaintSurfaceEventArgs e)
+	protected override void OnRender(WpfDrawingContext drawingContext)
 	{
-		base.OnPaintSurface(e);
+		base.OnRender(drawingContext);
 		_host.UpdateDescriptorLayout();
-		SKCanvas canvas = e.Surface.Canvas;
-		canvas.Clear(SkiaDrawingHelper.ToSKColor(_grid.ItemValueBackColor));
 		if (ActualWidth <= 0d || ActualHeight <= 0d)
 		{
 			return;
 		}
 
-		float scaleX = e.Info.Width / (float)ActualWidth;
-		float scaleY = e.Info.Height / (float)ActualHeight;
-		int saveCount = canvas.Save();
-		canvas.Scale(scaleX, scaleY);
-		canvas.Translate(-_descriptor.RectangleR.Left, -_descriptor.RectangleR.Top);
+		DpiScale dpi = WpfVisualTreeHelper.GetDpi(this);
+		int pixelWidth = Math.Max(1, (int)Math.Ceiling(ActualWidth * dpi.DpiScaleX));
+		int pixelHeight = Math.Max(1, (int)Math.Ceiling(ActualHeight * dpi.DpiScaleY));
+		using Bitmap bitmap = new Bitmap(pixelWidth, pixelHeight, DrawingPixelFormat.Format32bppPArgb);
+		using Graphics graphics = Graphics.FromImage(bitmap);
+		graphics.Clear(_grid.ItemValueBackColor);
+		graphics.ScaleTransform((float)dpi.DpiScaleX, (float)dpi.DpiScaleY);
+		graphics.TranslateTransform(-_descriptor.RectangleR.Left, -_descriptor.RectangleR.Top);
 		try
 		{
 			using DrawingPen pen = new DrawingPen(DrawingColor.Black, 1f);
 			using DrawingSolidBrush brush = new DrawingSolidBrush(DrawingColor.Black);
 			var drawingTools = new DrawingTools
 			{
-				Canvas = canvas,
+				Graphics = graphics,
 				Pen = pen,
-				SolidBrush = brush,
-				Context = new SkiaDrawingContext(canvas)
+				SolidBrush = brush
 			};
 			_descriptor.OnDrawValueRectangle(drawingTools);
 			if (_host.IsReadOnly)
 			{
-				using SKPaint overlay = new SKPaint
-				{
-					Color = new SKColor(125, 125, 125, 125),
-					Style = SKPaintStyle.Fill,
-					IsAntialias = true
-				};
-				canvas.DrawRect(SkiaDrawingHelper.ToSKRect(_descriptor.RectangleR), overlay);
+				using DrawingSolidBrush overlay = new DrawingSolidBrush(DrawingColor.FromArgb(125, 125, 125, 125));
+				graphics.FillRectangle(overlay, _descriptor.RectangleR);
 			}
 		}
 		catch (Exception ex)
 		{
 			_descriptor.OnSetValueError(ex);
 		}
+
+		BitmapData bitmapData = bitmap.LockBits(
+			new Rectangle(0, 0, pixelWidth, pixelHeight),
+			ImageLockMode.ReadOnly,
+			DrawingPixelFormat.Format32bppPArgb);
+		try
+		{
+			var renderTarget = new WriteableBitmap(
+				pixelWidth,
+				pixelHeight,
+				dpi.PixelsPerInchX,
+				dpi.PixelsPerInchY,
+				WpfPixelFormats.Pbgra32,
+				null);
+			renderTarget.WritePixels(
+				new Int32Rect(0, 0, pixelWidth, pixelHeight),
+				bitmapData.Scan0,
+				Math.Abs(bitmapData.Stride) * pixelHeight,
+				bitmapData.Stride);
+			drawingContext.DrawImage(renderTarget, new WpfRect(0d, 0d, ActualWidth, ActualHeight));
+		}
 		finally
 		{
-			canvas.RestoreToCount(saveCount);
+			bitmap.UnlockBits(bitmapData);
 		}
 	}
 

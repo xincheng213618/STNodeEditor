@@ -664,7 +664,7 @@ public abstract class STNode : INotifyPropertyChanged
 	}
 
 	/// <summary>
-	/// Gets whether the node's creation lifecycle has completed.
+	/// Gets whether the node creation lifecycle has completed.
 	/// </summary>
 	[Browsable(false)]
 	public bool IsCreated => Volatile.Read(ref m_create_state) == 2;
@@ -818,7 +818,7 @@ public abstract class STNode : INotifyPropertyChanged
 
 	protected internal virtual void OnDrawNode(DrawingTools dt)
 	{
-		SkiaDrawingContext graphics = dt.Context;
+		Graphics graphics = dt.Graphics;
 		int cornerRadius = _Owner?.NodeCornerRadius ?? 0;
 		if (_BackColor.A != 0)
 		{
@@ -827,7 +827,7 @@ public abstract class STNode : INotifyPropertyChanged
 			{
 				graphics.SmoothingMode = SmoothingMode.AntiAlias;
 				using GraphicsPath nodePath = CreateRoundedRectanglePath(Rectangle, cornerRadius);
-				int graphicsState = graphics.Save();
+				GraphicsState graphicsState = graphics.Save();
 				graphics.SetClip(nodePath, CombineMode.Intersect);
 				graphics.FillRectangle(dt.SolidBrush, _Left, _Top + _TitleHeight, _Width, Height - _TitleHeight);
 				graphics.Restore(graphicsState);
@@ -851,7 +851,7 @@ public abstract class STNode : INotifyPropertyChanged
 	{
 		m_sf.Alignment = StringAlignment.Center;
 		m_sf.LineAlignment = StringAlignment.Center;
-		SkiaDrawingContext graphics = dt.Context;
+		Graphics graphics = dt.Graphics;
 		SolidBrush solidBrush = dt.SolidBrush;
 		if (_TitleColor.A != 0)
 		{
@@ -861,7 +861,7 @@ public abstract class STNode : INotifyPropertyChanged
 			{
 				graphics.SmoothingMode = SmoothingMode.AntiAlias;
 				using GraphicsPath nodePath = CreateRoundedRectanglePath(Rectangle, cornerRadius);
-				int graphicsState = graphics.Save();
+				GraphicsState graphicsState = graphics.Save();
 				graphics.SetClip(nodePath, CombineMode.Intersect);
 				graphics.FillRectangle(solidBrush, TitleRectangle);
 				graphics.Restore(graphicsState);
@@ -883,7 +883,7 @@ public abstract class STNode : INotifyPropertyChanged
 				{
 					graphics.SmoothingMode = SmoothingMode.AntiAlias;
 					using GraphicsPath nodePath = CreateRoundedRectanglePath(Rectangle, cornerRadius);
-					int graphicsState = graphics.Save();
+					GraphicsState graphicsState = graphics.Save();
 					graphics.SetClip(nodePath, CombineMode.Intersect);
 					graphics.FillRectangle(solidBrush, progressRectangle);
 					graphics.Restore(graphicsState);
@@ -970,7 +970,7 @@ public abstract class STNode : INotifyPropertyChanged
 		{
 			return;
 		}
-		dt.Context.TranslateTransform(_Left, _Top + _TitleHeight);
+		dt.Graphics.TranslateTransform(_Left, _Top + _TitleHeight);
 		Point empty = Point.Empty;
 		Point point = Point.Empty;
 		foreach (STNodeControl control in _Controls)
@@ -980,19 +980,19 @@ public abstract class STNode : INotifyPropertyChanged
 				empty.X = control.Left - point.X;
 				empty.Y = control.Top - point.Y;
 				point = control.Location;
-				dt.Context.TranslateTransform(empty.X, empty.Y);
-				dt.Context.SmoothingMode = SmoothingMode.None;
+				dt.Graphics.TranslateTransform(empty.X, empty.Y);
+				dt.Graphics.SmoothingMode = SmoothingMode.None;
 				control.OnPaint(dt);
 			}
 		}
-		dt.Context.TranslateTransform(-_Left - point.X, -_Top - _TitleHeight - point.Y);
+		dt.Graphics.TranslateTransform(-_Left - point.X, -_Top - _TitleHeight - point.Y);
 	}
 
 	protected internal virtual void OnDrawMark(DrawingTools dt)
 	{
 		if (!string.IsNullOrEmpty(_Mark))
 		{
-			SkiaDrawingContext graphics = dt.Context;
+			Graphics graphics = dt.Graphics;
 			SolidBrush solidBrush = dt.SolidBrush;
 			m_sf.LineAlignment = StringAlignment.Center;
 			graphics.SmoothingMode = SmoothingMode.None;
@@ -1020,7 +1020,7 @@ public abstract class STNode : INotifyPropertyChanged
 
 	protected virtual void OnDrawOptionDot(DrawingTools dt, STNodeOption op)
 	{
-		SkiaDrawingContext graphics = dt.Context;
+		Graphics graphics = dt.Graphics;
 		Pen pen = dt.Pen;
 		SolidBrush solidBrush = dt.SolidBrush;
 		Type typeFromHandle = typeof(object);
@@ -1068,7 +1068,7 @@ public abstract class STNode : INotifyPropertyChanged
 
 	protected virtual void OnDrawOptionText(DrawingTools dt, STNodeOption op)
 	{
-		SkiaDrawingContext graphics = dt.Context;
+		Graphics graphics = dt.Graphics;
 		SolidBrush solidBrush = dt.SolidBrush;
 		if (op.IsInput)
 		{
@@ -1090,18 +1090,6 @@ public abstract class STNode : INotifyPropertyChanged
 	protected virtual Rectangle OnSetOptionTextRectangle(STNodeOption op, Rectangle rect, int nIndex)
 	{
 		return rect;
-	}
-
-	protected virtual Size GetDefaultNodeSize()
-	{
-		if (_Owner != null)
-		{
-			using Graphics graphics = _Owner.CreateGraphics();
-			return GetDefaultNodeSize(graphics);
-		}
-		using Bitmap bitmap = new Bitmap(1, 1);
-		using Graphics fallbackGraphics = Graphics.FromImage(bitmap);
-		return GetDefaultNodeSize(fallbackGraphics);
 	}
 
 	protected virtual Size GetDefaultNodeSize(Graphics g)
@@ -1153,6 +1141,23 @@ public abstract class STNode : INotifyPropertyChanged
 		return new Size(num3, height);
 	}
 
+	protected virtual Size GetDefaultNodeSize()
+	{
+		if (_Owner != null)
+		{
+			using Graphics graphics = _Owner.CreateGraphics();
+			return GetDefaultNodeSize(graphics);
+		}
+		using Bitmap bitmap = new Bitmap(1, 1);
+		using Graphics fallbackGraphics = Graphics.FromImage(bitmap);
+		return GetDefaultNodeSize(fallbackGraphics);
+	}
+
+	protected virtual Rectangle OnBuildMarkRectangle(Graphics g)
+	{
+		return new Rectangle(_Left, _Top - 30, _Width, 20);
+	}
+
 	protected virtual Rectangle OnBuildMarkRectangle()
 	{
 		if (_Owner != null)
@@ -1163,11 +1168,6 @@ public abstract class STNode : INotifyPropertyChanged
 		using Bitmap bitmap = new Bitmap(1, 1);
 		using Graphics fallbackGraphics = Graphics.FromImage(bitmap);
 		return OnBuildMarkRectangle(fallbackGraphics);
-	}
-
-	protected virtual Rectangle OnBuildMarkRectangle(Graphics g)
-	{
-		return new Rectangle(_Left, _Top - 30, _Width, 20);
 	}
 
 	protected virtual void OnSaveNode(Dictionary<string, byte[]> dic)

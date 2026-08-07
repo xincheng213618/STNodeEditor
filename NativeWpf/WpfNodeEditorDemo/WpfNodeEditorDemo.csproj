@@ -1,17 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <AssemblyName>WpfNodeEdittorDemo</AssemblyName>
     <RootNamespace>WpfNodeEditorDemo</RootNamespace>
     <Nullable>enable</Nullable>
-    <NoWarn>$(NoWarn);WFO1000</NoWarn>
     <ImplicitUsings>disable</ImplicitUsings>
     <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ST.Library.UI.WPF\ST.Library.UI.WPF.csproj" />
-    <PackageReference Include="SkiaSharp" Version="2.88.9" />
   </ItemGroup>
 </Project>

@@ -4,11 +4,11 @@ This directory is self-contained. It adds a native WPF implementation without ch
 
 ## Projects
 
-- `ST.Library.UI.WPF`: native WPF controls rendered with `SkiaSharp.Views.WPF.SKElement`.
+- `ST.Library.UI.WPF`: native WPF controls rendered through the original `System.Drawing.Graphics` contract and presented by a DPI-aware WPF `WriteableBitmap`.
 - `WpfNodeEditorDemo`: WPF-only sample with the node canvas, context menus, automatic layout, property editing, save/open actions, and execution command.
 - `STNodeEditor.Wpf.sln`: standalone solution for the two projects above.
 
-Neither project references `System.Windows.Forms`, `WindowsFormsIntegration`, `WindowsFormsHost`, or `SkiaSharp.Views.WindowsForms`.
+Neither project references `System.Windows.Forms`, `WindowsFormsIntegration`, `WindowsFormsHost`, or a third-party rendering package.
 
 The demo uses direct cursor-centered wheel zoom in `0.05` steps across the editor's full `0.2` to `5.0` scale range. The canvas lock button controls blank-area left-drag explicitly: unlocked pans the canvas, locked draws a selection rectangle, and middle-button drag always pans. Manual lock state is not changed by clicking a node.
 
@@ -23,4 +23,4 @@ dotnet build .\STNodeEditor.Wpf.sln
 dotnet run --project .\WpfNodeEditorDemo\WpfNodeEditorDemo.csproj
 ```
 
-The projects target `net10.0-windows` to match the current upstream WinForms library target. This does not alter the target framework or source of any existing project.
+The WPF library targets both `net8.0-windows` and `net10.0-windows`; the demo targets `net8.0-windows`. This does not alter the target framework or source of any existing project.

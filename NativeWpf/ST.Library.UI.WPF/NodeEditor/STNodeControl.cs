@@ -256,7 +256,7 @@ public class STNodeControl
 
 	public event STNodeMouseEventHandler MouseWheel;
 
-	public event EventHandler MouseHWheel;
+	public event STNodeMouseEventHandler MouseHWheel;
 
 	public event KeyEventHandler KeyDown;
 
@@ -282,7 +282,7 @@ public class STNodeControl
 
 	protected internal virtual void OnPaint(DrawingTools dt)
 	{
-		SkiaDrawingContext graphics = dt.Context;
+		Graphics graphics = dt.Graphics;
 		SolidBrush solidBrush = dt.SolidBrush;
 		graphics.SmoothingMode = SmoothingMode.None;
 		graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;

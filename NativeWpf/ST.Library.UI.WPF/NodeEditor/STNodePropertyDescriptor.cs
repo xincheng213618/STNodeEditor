@@ -222,7 +222,7 @@ public class STNodePropertyDescriptor
 		{
 			return;
 		}
-		SkiaDrawingContext graphics = dt.Context;
+		Graphics graphics = dt.Graphics;
 		SolidBrush solidBrush = dt.SolidBrush;
 		STNodePropertyGrid control = Control;
 		solidBrush.Color = control.ItemValueBackColor;

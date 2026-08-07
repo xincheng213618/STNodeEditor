@@ -35,7 +35,7 @@ namespace WpfNodeEditorDemo
             get => STNodeEditor.CanvasScale;
             set
             {
-                float scale = Math.Clamp(value, 0.5f, 3f);
+                float scale = Math.Clamp(value, 0.2f, 5f);
                 if (Math.Abs(STNodeEditor.CanvasScale - scale) < 0.001f)
                 {
                     return;

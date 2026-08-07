@@ -1,17 +1,15 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFrameworks>net8.0-windows;net10.0-windows</TargetFrameworks>
     <UseWPF>true</UseWPF>
     <AssemblyName>ST.Library.UI.WPF</AssemblyName>
     <RootNamespace>ST.Library.UI</RootNamespace>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>
-    <LangVersion>latest</LangVersion>
+    <LangVersion>11.0</LangVersion>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="SkiaSharp" Version="2.88.9" />
-    <PackageReference Include="SkiaSharp.Views.WPF" Version="2.88.9" />
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App" />
   </ItemGroup>
 </Project>

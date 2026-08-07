@@ -4,26 +4,31 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Windows.Input;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using SkiaSharp;
-using SkiaSharp.Views.Desktop;
-using SkiaSharp.Views.WPF;
+using DrawingContext = System.Windows.Media.DrawingContext;
+using WpfDpiScale = System.Windows.DpiScale;
+using WpfPixelFormats = System.Windows.Media.PixelFormats;
+using WpfVisualTreeHelper = System.Windows.Media.VisualTreeHelper;
 using WpfDragEventArgs = System.Windows.DragEventArgs;
 using WpfKeyEventArgs = System.Windows.Input.KeyEventArgs;
 using WpfMouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
 using WpfMouseEventArgs = System.Windows.Input.MouseEventArgs;
 using WpfMouseWheelEventArgs = System.Windows.Input.MouseWheelEventArgs;
 using WpfPoint = System.Windows.Point;
+using WpfRect = System.Windows.Rect;
 using WpfTextCompositionEventArgs = System.Windows.Input.TextCompositionEventArgs;
 
 namespace ST.Library.UI.NodeEditor;
 
-public partial class STNodeEditor : SKElement, IDisposable
+public partial class STNodeEditor : System.Windows.Controls.Control, IDisposable
 {
 	protected enum CanvasAction
 	{
@@ -150,6 +155,14 @@ public partial class STNodeEditor : SKElement, IDisposable
 
 	private readonly HashSet<STNode> m_rectangle_selection_baseline = new HashSet<STNode>();
 
+	private Image m_img_border;
+
+	private Image m_img_border_hover;
+
+	private Image m_img_border_selected;
+
+	private Image m_img_border_active;
+
 	private float m_real_canvas_x;
 
 	private float m_real_canvas_y;
@@ -163,6 +176,10 @@ public partial class STNodeEditor : SKElement, IDisposable
 	private List<int> m_lst_magnet_mx = new List<int>();
 
 	private List<int> m_lst_magnet_my = new List<int>();
+
+	private DateTime m_dt_vw = DateTime.Now;
+
+	private DateTime m_dt_hw = DateTime.Now;
 
 	private CanvasAction m_ca;
 
@@ -212,9 +229,15 @@ public partial class STNodeEditor : SKElement, IDisposable
 
 	private Size _ClientSize = new Size(200, 200);
 
-	private readonly Bitmap m_measurement_bitmap = new Bitmap(1, 1);
+	private readonly Bitmap m_measurement_bitmap = new Bitmap(1, 1, PixelFormat.Format32bppPArgb);
 
 	private readonly DispatcherTimer m_animation_timer;
+
+	private Bitmap m_render_bitmap;
+
+	private Graphics m_render_graphics;
+
+	private WriteableBitmap m_render_target;
 
 	private volatile bool m_disposed;
 
@@ -496,6 +519,11 @@ public partial class STNodeEditor : SKElement, IDisposable
 		set
 		{
 			_BorderColor = value;
+			if (m_img_border != null)
+			{
+				m_img_border.Dispose();
+			}
+			m_img_border = CreateBorderImage(value);
 			Invalidate();
 		}
 	}
@@ -511,6 +539,11 @@ public partial class STNodeEditor : SKElement, IDisposable
 		set
 		{
 			_BorderHoverColor = value;
+			if (m_img_border_hover != null)
+			{
+				m_img_border_hover.Dispose();
+			}
+			m_img_border_hover = CreateBorderImage(value);
 			Invalidate();
 		}
 	}
@@ -526,6 +559,11 @@ public partial class STNodeEditor : SKElement, IDisposable
 		set
 		{
 			_BorderSelectedColor = value;
+			if (m_img_border_selected != null)
+			{
+				m_img_border_selected.Dispose();
+			}
+			m_img_border_selected = CreateBorderImage(value);
 			Invalidate();
 		}
 	}
@@ -541,6 +579,11 @@ public partial class STNodeEditor : SKElement, IDisposable
 		set
 		{
 			_BorderActiveColor = value;
+			if (m_img_border_active != null)
+			{
+				m_img_border_active.Dispose();
+			}
+			m_img_border_active = CreateBorderImage(value);
 			Invalidate();
 		}
 	}
@@ -927,6 +970,10 @@ public partial class STNodeEditor : SKElement, IDisposable
 			Pen = new Pen(Color.Black, 1f),
 			SolidBrush = new SolidBrush(Color.Black)
 		};
+		m_img_border = CreateBorderImage(_BorderColor);
+		m_img_border_active = CreateBorderImage(_BorderActiveColor);
+		m_img_border_hover = CreateBorderImage(_BorderHoverColor);
+		m_img_border_selected = CreateBorderImage(_BorderSelectedColor);
 		m_sf?.Dispose();
 		m_sf = new StringFormat
 		{
@@ -1002,9 +1049,9 @@ public partial class STNodeEditor : SKElement, IDisposable
 		return current + (delta > 0f ? step : -step);
 	}
 
-	protected override void OnPaintSurface(SKPaintSurfaceEventArgs e)
+	protected override void OnRender(DrawingContext drawingContext)
 	{
-		base.OnPaintSurface(e);
+		base.OnRender(drawingContext);
 		if (m_disposed)
 		{
 			return;
@@ -1016,22 +1063,63 @@ public partial class STNodeEditor : SKElement, IDisposable
 			return;
 		}
 
-		float scaleX = ActualWidth > 0 ? e.Info.Width / (float)ActualWidth : 1f;
-		float scaleY = ActualHeight > 0 ? e.Info.Height / (float)ActualHeight : 1f;
-		SKCanvas canvas = e.Surface.Canvas;
-		int saveCount = canvas.Save();
-		canvas.Scale(scaleX, scaleY);
-		RenderToCanvas(canvas, clientSize.Width, clientSize.Height);
-		canvas.RestoreToCount(saveCount);
+		double width = ActualWidth > 0 ? ActualWidth : clientSize.Width;
+		double height = ActualHeight > 0 ? ActualHeight : clientSize.Height;
+		WpfDpiScale dpi = WpfVisualTreeHelper.GetDpi(this);
+		int pixelWidth = Math.Max(1, (int)Math.Ceiling(width * dpi.DpiScaleX));
+		int pixelHeight = Math.Max(1, (int)Math.Ceiling(height * dpi.DpiScaleY));
+
+		EnsureRenderTarget(pixelWidth, pixelHeight, dpi.PixelsPerInchX, dpi.PixelsPerInchY);
+		RenderToGraphics(
+			m_render_graphics,
+			clientSize.Width,
+			clientSize.Height,
+			(float)dpi.DpiScaleX,
+			(float)dpi.DpiScaleY);
+		BitmapData bitmapData = m_render_bitmap.LockBits(
+			new Rectangle(0, 0, pixelWidth, pixelHeight),
+			ImageLockMode.ReadOnly,
+			PixelFormat.Format32bppPArgb);
+		try
+		{
+			m_render_target.WritePixels(
+				new System.Windows.Int32Rect(0, 0, pixelWidth, pixelHeight),
+				bitmapData.Scan0,
+				Math.Abs(bitmapData.Stride) * pixelHeight,
+				bitmapData.Stride);
+		}
+		finally
+		{
+			m_render_bitmap.UnlockBits(bitmapData);
+		}
+
+		drawingContext.DrawImage(m_render_target, new WpfRect(0, 0, width, height));
 	}
 
-	private void RenderToCanvas(SKCanvas canvas, int width, int height)
+	private void EnsureRenderTarget(int pixelWidth, int pixelHeight, double dpiX, double dpiY)
 	{
-		SkiaDrawingContext graphics = new SkiaDrawingContext(canvas);
+		if (m_render_bitmap != null &&
+			m_render_bitmap.Width == pixelWidth &&
+			m_render_bitmap.Height == pixelHeight &&
+			Math.Abs(m_render_target.DpiX - dpiX) < 0.01 &&
+			Math.Abs(m_render_target.DpiY - dpiY) < 0.01)
+		{
+			return;
+		}
+		m_render_graphics?.Dispose();
+		m_render_bitmap?.Dispose();
+		m_render_bitmap = new Bitmap(pixelWidth, pixelHeight, PixelFormat.Format32bppPArgb);
+		m_render_graphics = Graphics.FromImage(m_render_bitmap);
+		m_render_target = new WriteableBitmap(pixelWidth, pixelHeight, dpiX, dpiY, WpfPixelFormats.Pbgra32, null);
+	}
+
+	private void RenderToGraphics(Graphics graphics, int width, int height, float dpiScaleX, float dpiScaleY)
+	{
+		ResetRenderTransform(graphics, dpiScaleX, dpiScaleY);
 		graphics.Clear(BackColor);
+		graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 		graphics.SmoothingMode = SmoothingMode.HighQuality;
-		m_drawing_tools.Canvas = canvas;
-		m_drawing_tools.Context = graphics;
+		m_drawing_tools.Graphics = graphics;
 		if (_ShowGrid)
 		{
 			OnDrawGrid(m_drawing_tools, width, height);
@@ -1052,7 +1140,7 @@ public partial class STNodeEditor : SKElement, IDisposable
 				DrawBezier(graphics, m_drawing_tools.Pen, m_pt_dot_down, m_pt_in_canvas, _Curvature);
 			}
 		}
-		ResetRenderTransform(graphics);
+		ResetRenderTransform(graphics, dpiScaleX, dpiScaleY);
 		switch (m_ca)
 		{
 		case CanvasAction.MoveNode:
@@ -1082,9 +1170,10 @@ public partial class STNodeEditor : SKElement, IDisposable
 		}
 	}
 
-	private static void ResetRenderTransform(SkiaDrawingContext graphics)
+	private static void ResetRenderTransform(Graphics graphics, float dpiScaleX, float dpiScaleY)
 	{
 		graphics.ResetTransform();
+		graphics.ScaleTransform(dpiScaleX, dpiScaleY);
 	}
 
 	protected override void OnMouseDown(WpfMouseButtonEventArgs e)
@@ -1558,6 +1647,7 @@ public partial class STNodeEditor : SKElement, IDisposable
 		if (e.Data.GetData("STNodeType") is Type type && type.IsSubclassOf(typeof(STNode)))
 		{
 			STNode node = (STNode)Activator.CreateInstance(type);
+			node.Create();
 			WpfPoint position = e.GetPosition(this);
 			Point canvasPoint = ControlToCanvas(new Point((int)Math.Round(position.X), (int)Math.Round(position.Y)));
 			node.Left = canvasPoint.X;
@@ -1620,7 +1710,7 @@ public partial class STNodeEditor : SKElement, IDisposable
 
 	protected virtual void OnDrawGrid(DrawingTools dt, int nWidth, int nHeight)
 	{
-		SkiaDrawingContext graphics = dt.Context;
+		Graphics graphics = dt.Graphics;
 		using Pen pen = new Pen(Color.FromArgb(65, _GridColor));
 		using Pen pen2 = new Pen(Color.FromArgb(30, _GridColor));
 		float num = 20f * _CanvasScale;
@@ -1679,22 +1769,15 @@ public partial class STNodeEditor : SKElement, IDisposable
 			{
 				return;
 			}
-			DrawNodeOutline(dt.Context, node.Rectangle, _BorderHoverColor, 1f, inset: true);
+			DrawNodeOutline(dt.Graphics, node.Rectangle, _BorderHoverColor, 1f, inset: true);
 			return;
 		}
 
-		float canvasScale = Math.Max(_CanvasScale, 0.2f);
-		float blurSigma = 4f / canvasScale;
-		float shadowOffset = 2f / canvasScale;
-		Color shadowColor = Color.FromArgb(105, _BorderColor);
-		dt.Context.DrawRoundedShadow(node.Rectangle, _NodeCornerRadius, shadowColor, blurSigma, 0f, shadowOffset);
+		Image image = isActive ? m_img_border_active : (isSelected ? m_img_border_selected : (isHovered ? m_img_border_hover : m_img_border));
+		RenderBorder(dt.Graphics, node.Rectangle, image);
 		if (!string.IsNullOrEmpty(node.Mark))
 		{
-			dt.Context.DrawRoundedShadow(node.MarkRectangle, _NodeCornerRadius, Color.FromArgb(80, _BorderColor), blurSigma, 0f, shadowOffset);
-		}
-		if (isHovered && !isActive && !isSelected)
-		{
-			DrawNodeOutline(dt.Context, node.Rectangle, _BorderHoverColor, 1f / canvasScale, inset: true);
+			RenderBorder(dt.Graphics, node.MarkRectangle, image);
 		}
 	}
 
@@ -1709,12 +1792,12 @@ public partial class STNodeEditor : SKElement, IDisposable
 		float canvasScale = Math.Max(_CanvasScale, 0.2f);
 		Color outlineColor = isActive ? _BorderActiveColor : _BorderSelectedColor;
 		float outlineWidth = (isActive ? 2f : 1.5f) / canvasScale;
-		DrawNodeOutline(dt.Context, node.Rectangle, outlineColor, outlineWidth, inset: true);
+		DrawNodeOutline(dt.Graphics, node.Rectangle, outlineColor, outlineWidth, inset: true);
 	}
 
-	private void DrawNodeOutline(SkiaDrawingContext graphics, Rectangle rectangle, Color color, float width, bool inset)
+	private void DrawNodeOutline(Graphics graphics, Rectangle rectangle, Color color, float width, bool inset)
 	{
-		int graphicsState = graphics.Save();
+		GraphicsState graphicsState = graphics.Save();
 		graphics.SmoothingMode = SmoothingMode.AntiAlias;
 		float pathInset = inset ? width / 2f : 0f;
 		RectangleF outlineRectangle = new RectangleF(
@@ -1750,7 +1833,7 @@ public partial class STNodeEditor : SKElement, IDisposable
 
 	protected virtual void OnDrawConnectedLine(DrawingTools dt)
 	{
-		SkiaDrawingContext graphics = dt.Context;
+		Graphics graphics = dt.Graphics;
 		graphics.SmoothingMode = SmoothingMode.HighQuality;
 		m_p_line_hover.Color = Color.FromArgb(10, 0, 0, 0);
 		Type typeFromHandle = typeof(object);
@@ -1808,7 +1891,7 @@ public partial class STNodeEditor : SKElement, IDisposable
 
 	protected virtual void OnDrawMark(DrawingTools dt)
 	{
-		SkiaDrawingContext graphics = dt.Context;
+		Graphics graphics = dt.Graphics;
 		SizeF sizeF = graphics.MeasureString(m_find.Mark, Font);
 		Rectangle rectangle = new Rectangle(m_pt_in_control.X + 15, m_pt_in_control.Y + 10, (int)sizeF.Width + 6, 4 + (Font.Height + 4) * m_find.MarkLines.Length);
 		if (rectangle.Right > ClientSize.Width)
@@ -1853,8 +1936,8 @@ public partial class STNodeEditor : SKElement, IDisposable
 		{
 			return;
 		}
-		SkiaDrawingContext graphics = dt.Context;
-		int state = graphics.Save();
+		Graphics graphics = dt.Graphics;
+		GraphicsState state = graphics.Save();
 		Pen pen = m_drawing_tools.Pen;
 		SolidBrush solidBrush = dt.SolidBrush;
 		pen.Color = _MagnetColor;
@@ -1901,7 +1984,7 @@ public partial class STNodeEditor : SKElement, IDisposable
 
 	protected virtual void OnDrawSelectedRectangle(DrawingTools dt, RectangleF rectf)
 	{
-		SkiaDrawingContext graphics = dt.Context;
+		Graphics graphics = dt.Graphics;
 		SolidBrush solidBrush = dt.SolidBrush;
 		dt.Pen.Color = _SelectedRectangleColor;
 		graphics.DrawRectangle(dt.Pen, rectf.Left, rectf.Y, rectf.Width, rectf.Height);
@@ -1911,7 +1994,7 @@ public partial class STNodeEditor : SKElement, IDisposable
 
 	protected virtual void OnDrawNodeOutLocation(DrawingTools dt, Size sz, List<Point> lstPts)
 	{
-		SkiaDrawingContext graphics = dt.Context;
+		Graphics graphics = dt.Graphics;
 		SolidBrush solidBrush = dt.SolidBrush;
 		solidBrush.Color = _LocationBackColor;
 		graphics.SmoothingMode = SmoothingMode.None;
@@ -1951,7 +2034,7 @@ public partial class STNodeEditor : SKElement, IDisposable
 	{
 		if (m_alpha_alert != 0)
 		{
-			SkiaDrawingContext graphics = dt.Context;
+			Graphics graphics = dt.Graphics;
 			SolidBrush solidBrush = dt.SolidBrush;
 			graphics.SmoothingMode = SmoothingMode.None;
 			solidBrush.Color = backColor;
@@ -1972,7 +2055,7 @@ public partial class STNodeEditor : SKElement, IDisposable
 		const int margin = 8;
 		m_rect_canvas_drag_lock = new Rectangle(ClientSize.Width - size - margin, margin, size, size);
 
-		SkiaDrawingContext graphics = dt.Context;
+		Graphics graphics = dt.Graphics;
 		Color backColor = EnableBlankLeftDragCanvas
 			? Color.FromArgb(220, 40, 120, 60)
 			: Color.FromArgb(190, 35, 35, 35);
@@ -1995,7 +2078,7 @@ public partial class STNodeEditor : SKElement, IDisposable
 		graphics.DrawString(EnableBlankLeftDragCanvas ? "\uE72E" : "\uE785", iconFont, iconBrush, m_rect_canvas_drag_lock, iconFormat);
 	}
 
-	private Rectangle GetAlertRectangle(SkiaDrawingContext g, string strText, AlertLocation al)
+	protected virtual Rectangle GetAlertRectangle(Graphics g, string strText, AlertLocation al)
 	{
 		SizeF sizeF = g.MeasureString(m_str_alert, Font);
 		Size size = new Size((int)Math.Round(sizeF.Width + 10f), (int)Math.Round(sizeF.Height + 4f));
@@ -2049,7 +2132,7 @@ public partial class STNodeEditor : SKElement, IDisposable
 		Invalidate();
 	}
 
-	internal void OnDrawAlert(SkiaDrawingContext g)
+	internal void OnDrawAlert(Graphics g)
 	{
 		m_rect_alert = GetAlertRectangle(g, m_str_alert, m_al);
 		Color foreColor = Color.FromArgb((int)((float)m_alpha_alert / 255f * (float)(int)m_forecolor_alert.A), m_forecolor_alert);
@@ -2075,6 +2158,20 @@ public partial class STNodeEditor : SKElement, IDisposable
 			m_hs_node_selected.Remove(node);
 		}
 		UpdateCanvasDragModeFromSelection();
+	}
+
+	private Image CreateBorderImage(Color clr)
+	{
+		Image image = new Bitmap(12, 12);
+		using Graphics graphics = Graphics.FromImage(image);
+		graphics.SmoothingMode = SmoothingMode.HighQuality;
+		using GraphicsPath graphicsPath = new GraphicsPath();
+		graphicsPath.AddEllipse(new Rectangle(0, 0, 11, 11));
+		using PathGradientBrush pathGradientBrush = new PathGradientBrush(graphicsPath);
+		pathGradientBrush.CenterColor = Color.FromArgb(200, clr);
+		pathGradientBrush.SurroundColors = new Color[1] { Color.FromArgb(10, clr) };
+		graphics.FillPath(pathGradientBrush, graphicsPath);
+		return image;
 	}
 
 	private ConnectionStatus DisConnectionHover()
@@ -2411,12 +2508,12 @@ public partial class STNodeEditor : SKElement, IDisposable
 		return m_mi;
 	}
 
-	private void DrawBezier(SkiaDrawingContext g, Pen p, PointF ptStart, PointF ptEnd, float f)
+	private void DrawBezier(Graphics g, Pen p, PointF ptStart, PointF ptEnd, float f)
 	{
 		DrawBezier(g, p, ptStart.X, ptStart.Y, ptEnd.X, ptEnd.Y, f);
 	}
 
-	private void DrawBezier(SkiaDrawingContext g, Pen p, float x1, float y1, float x2, float y2, float f)
+	private void DrawBezier(Graphics g, Pen p, float x1, float y1, float x2, float y2, float f)
 	{
 		using GraphicsPath connectionPath = CreateBezierPath(x1, y1, x2, y2, f);
 		g.DrawPath(p, connectionPath);
@@ -2443,6 +2540,18 @@ public partial class STNodeEditor : SKElement, IDisposable
 		}
 		graphicsPath.AddBezier(x1, y1, x1 + num, y1, x2 - num, y2, x2, y2);
 		return graphicsPath;
+	}
+
+	private void RenderBorder(Graphics g, Rectangle rect, Image img)
+	{
+		g.DrawImage(img, new Rectangle(rect.X - 5, rect.Y - 5, 5, 5), new Rectangle(0, 0, 5, 5), GraphicsUnit.Pixel);
+		g.DrawImage(img, new Rectangle(rect.Right, rect.Y - 5, 5, 5), new Rectangle(img.Width - 5, 0, 5, 5), GraphicsUnit.Pixel);
+		g.DrawImage(img, new Rectangle(rect.X - 5, rect.Bottom, 5, 5), new Rectangle(0, img.Height - 5, 5, 5), GraphicsUnit.Pixel);
+		g.DrawImage(img, new Rectangle(rect.Right, rect.Bottom, 5, 5), new Rectangle(img.Width - 5, img.Height - 5, 5, 5), GraphicsUnit.Pixel);
+		g.DrawImage(img, new Rectangle(rect.X - 5, rect.Y, 5, rect.Height), new Rectangle(0, 5, 5, img.Height - 10), GraphicsUnit.Pixel);
+		g.DrawImage(img, new Rectangle(rect.X, rect.Y - 5, rect.Width, 5), new Rectangle(5, 0, img.Width - 10, 5), GraphicsUnit.Pixel);
+		g.DrawImage(img, new Rectangle(rect.Right, rect.Y, 5, rect.Height), new Rectangle(img.Width - 5, 5, 5, img.Height - 10), GraphicsUnit.Pixel);
+		g.DrawImage(img, new Rectangle(rect.X, rect.Bottom, rect.Width, 5), new Rectangle(5, img.Height - 5, img.Width - 10, 5), GraphicsUnit.Pixel);
 	}
 
 	public void Invalidate()
@@ -2852,16 +2961,12 @@ public partial class STNodeEditor : SKElement, IDisposable
 		{
 			fScale = 3f;
 		}
-		int width = Math.Max(1, (int)Math.Ceiling(rect.Width * fScale));
-		int height = Math.Max(1, (int)Math.Ceiling(rect.Height * fScale));
-		using SKBitmap bitmap = new SKBitmap(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
-		using (SKCanvas canvas = new SKCanvas(bitmap))
+		Image image = new Bitmap((int)((float)rect.Width * fScale), (int)((float)rect.Height * fScale));
+		using (Graphics graphics = Graphics.FromImage(image))
 		{
-			canvas.Scale(fScale, fScale);
-			SkiaDrawingContext graphics = new SkiaDrawingContext(canvas);
 			graphics.Clear(BackColor);
-			m_drawing_tools.Canvas = canvas;
-			m_drawing_tools.Context = graphics;
+			graphics.ScaleTransform(fScale, fScale);
+			m_drawing_tools.Graphics = graphics;
 			if (_ShowGrid)
 			{
 				OnDrawGrid(m_drawing_tools, rect.Width, rect.Height);
@@ -2872,15 +2977,10 @@ public partial class STNodeEditor : SKElement, IDisposable
 			graphics.ResetTransform();
 			if (_ShowLocation)
 			{
-				OnDrawNodeOutLocation(m_drawing_tools, new Size(rect.Width, rect.Height), m_lst_node_out);
+				OnDrawNodeOutLocation(m_drawing_tools, image.Size, m_lst_node_out);
 			}
 		}
-
-		using SKImage skImage = SKImage.FromBitmap(bitmap);
-		using SKData data = skImage.Encode(SKEncodedImageFormat.Png, 100);
-		using MemoryStream stream = new MemoryStream(data.ToArray());
-		using Image decoded = Image.FromStream(stream);
-		return new Bitmap(decoded);
+		return image;
 	}
 
 	public void SaveCanvas(string strFileName)
@@ -3024,6 +3124,7 @@ public partial class STNodeEditor : SKElement, IDisposable
 			throw new TypeLoadException($"无法找到节点类型 {{{modelKey}}}，请确认对应程序集已由编辑器加载");
 		}
 		STNode sTNode = (STNode)Activator.CreateInstance(type);
+		sTNode.Create();
 		sTNode.OnLoadNode(dictionary);
 		return sTNode;
 	}
@@ -3186,8 +3287,14 @@ public partial class STNodeEditor : SKElement, IDisposable
 		m_p_line?.Dispose();
 		m_p_line_hover?.Dispose();
 		m_sf?.Dispose();
+		m_img_border?.Dispose();
+		m_img_border_hover?.Dispose();
+		m_img_border_selected?.Dispose();
+		m_img_border_active?.Dispose();
 		m_drawing_tools.Pen?.Dispose();
 		m_drawing_tools.SolidBrush?.Dispose();
+		m_render_graphics?.Dispose();
+		m_render_bitmap?.Dispose();
 		m_measurement_bitmap.Dispose();
 		_Font?.Dispose();
 		GC.SuppressFinalize(this);
