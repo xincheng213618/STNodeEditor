@@ -692,9 +692,6 @@ namespace ST.Library.UI.NodeEditor
                     if (!string.IsNullOrEmpty(m_find.Mark)) this.OnDrawMark(m_drawing_tools);
                     break;
             }
-            return bitmap;
-        }
-
             if (this._ShowLocation) this.OnDrawNodeOutLocation(m_drawing_tools, this.Size, m_lst_node_out);
             this.OnDrawAlert();
         }
@@ -1181,7 +1178,7 @@ namespace ST.Library.UI.NodeEditor
         protected virtual void OnDrawSelectedRectangle(DrawingTools dt, RectangleF rectf) {
             if (m_canvas == null) return;
             var fill = Color.FromArgb(this._SelectedRectangleColor.A / 3, this._SelectedRectangleColor);
-            Rectangle rect = this.CanvasToControl(m_rect_select);
+            RectangleF rect = this.CanvasToControl(m_rect_select);
             using (var stroke = new SKPaint { Color = SkiaDrawingHelper.ToSKColor(this._SelectedRectangleColor), Style = SKPaintStyle.Stroke, StrokeWidth = 1, IsAntialias = true })
             using (var bg = new SKPaint { Color = SkiaDrawingHelper.ToSKColor(fill), Style = SKPaintStyle.Fill, IsAntialias = true }) {
                 m_canvas.DrawRect(rectf.Left, rectf.Top, rectf.Width, rectf.Height, stroke);
