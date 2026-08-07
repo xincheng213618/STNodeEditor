@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -15,20 +16,17 @@ using DrawingSize = System.Drawing.Size;
 namespace WpfNodeEditorDemo
 {
     /// <summary>
-    /// Wires the native WPF editor, catalog and property grid together.
+    /// Provides editor commands and builds the node catalog directly from the demo assembly.
     /// </summary>
     public sealed class STNodeEditorHelper : INotifyPropertyChanged, IDisposable
     {
         private readonly ContextMenu _contextMenu = new ContextMenu();
         private readonly ContextMenu _addNodeMenu = new ContextMenu();
+        private readonly IReadOnlyDictionary<Type, string> _nodeTypes;
         private DrawingPoint _contextCanvasPoint;
         private bool _disposed;
 
         public STNodeEditor STNodeEditor { get; }
-
-        public STNodePropertyGrid STNodePropertyGrid { get; }
-
-        public STNodeTreeView STNodeTreeView { get; }
 
         public float CanvasScale
         {
@@ -50,24 +48,19 @@ namespace WpfNodeEditorDemo
 
         public event EventHandler? PropertyEditorRequested;
 
-        public STNodeEditorHelper(
-            STNodeEditor nodeEditor,
-            STNodeTreeView nodeTreeView,
-            STNodePropertyGrid nodePropertyGrid)
+        public STNodeEditorHelper(STNodeEditor nodeEditor, Assembly nodeAssembly)
         {
             STNodeEditor = nodeEditor ?? throw new ArgumentNullException(nameof(nodeEditor));
-            STNodeTreeView = nodeTreeView ?? throw new ArgumentNullException(nameof(nodeTreeView));
-            STNodePropertyGrid = nodePropertyGrid ?? throw new ArgumentNullException(nameof(nodePropertyGrid));
+            ArgumentNullException.ThrowIfNull(nodeAssembly);
+            _nodeTypes = nodeAssembly.GetTypes()
+                .Where(type => type.IsSubclassOf(typeof(STNode)) && !type.IsAbstract && type.GetConstructor(Type.EmptyTypes) != null)
+                .ToDictionary(
+                    type => type,
+                    type => type.GetCustomAttribute<STNodeAttribute>(inherit: false)?.Path ?? string.Empty);
 
-            STNodeEditor.ActiveChanged += OnActiveNodeChanged;
             STNodeEditor.CanvasScaled += OnCanvasScaled;
             _contextMenu.Opened += OnContextMenuOpened;
             STNodeEditor.ContextMenu = _contextMenu;
-        }
-
-        private void OnActiveNodeChanged(object? sender, EventArgs e)
-        {
-            STNodePropertyGrid.SetNode(STNodeEditor.ActiveNode);
         }
 
         private void OnCanvasScaled(object? sender, EventArgs e)
@@ -128,7 +121,7 @@ namespace WpfNodeEditorDemo
         private MenuItem CreateAddNodeMenu()
         {
             var addMenu = new MenuItem { Header = "添加节点" };
-            foreach (IGrouping<string, KeyValuePair<Type, string>> group in STNodeTreeView.NodeTypes
+            foreach (IGrouping<string, KeyValuePair<Type, string>> group in _nodeTypes
                 .Where(entry => entry.Key.IsSubclassOf(typeof(STNode)) && !entry.Key.IsAbstract)
                 .GroupBy(entry => GetCatalogPath(entry.Key, entry.Value))
                 .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
@@ -250,9 +243,7 @@ namespace WpfNodeEditorDemo
 
         private void RequestPropertyEditor(STNode node)
         {
-            STNodeEditor.AddSelectedNode(node);
-            STNodeEditor.SetActiveNode(node);
-            STNodePropertyGrid.SetNode(node);
+            SelectOnly(node);
             PropertyEditorRequested?.Invoke(this, EventArgs.Empty);
         }
 
@@ -272,6 +263,19 @@ namespace WpfNodeEditorDemo
             node.Left = _contextCanvasPoint.X;
             node.Top = _contextCanvasPoint.Y;
             STNodeEditor.Nodes.Add(node);
+            SelectOnly(node);
+        }
+
+        private void SelectOnly(STNode node)
+        {
+            foreach (STNode selectedNode in STNodeEditor.GetSelectedNode())
+            {
+                if (!ReferenceEquals(selectedNode, node))
+                {
+                    STNodeEditor.RemoveSelectedNode(selectedNode);
+                }
+            }
+
             STNodeEditor.AddSelectedNode(node);
             STNodeEditor.SetActiveNode(node);
         }
@@ -344,7 +348,6 @@ namespace WpfNodeEditorDemo
             }
 
             _disposed = true;
-            STNodeEditor.ActiveChanged -= OnActiveNodeChanged;
             STNodeEditor.CanvasScaled -= OnCanvasScaled;
             _contextMenu.Opened -= OnContextMenuOpened;
             _addNodeMenu.IsOpen = false;

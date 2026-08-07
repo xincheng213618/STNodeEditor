@@ -10,7 +10,7 @@
         Height="720"
         Width="1280"
         MinHeight="480"
-        MinWidth="1050"
+        MinWidth="760"
         Loaded="Window_Loaded">
     <Window.Resources>
         <Style x:Key="ToolbarButtonStyle" TargetType="Button">
@@ -55,39 +55,93 @@
     </Window.Resources>
 
     <Grid x:Name="Grid1" Background="#FFF2F2F2">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="310"/>
-        </Grid.ColumnDefinitions>
+        <st:STNodeEditor x:Name="STNodeEditorMain"
+                         LimitCanvasToContentBounds="False"
+                         ShowLocation="False"
+                         ShowCanvasDragLockButton="True"
+                         AutoSwitchCanvasDragBySelection="False"
+                         HighlightGridOrigin="False"
+                         ShowNodeShadow="True"
+                         NodeCornerRadius="10"
+                         HorizontalAlignment="Stretch"
+                         VerticalAlignment="Stretch" />
 
-        <Grid Grid.Column="0">
-            <st:STNodeEditor x:Name="STNodeEditorMain"
-                             LimitCanvasToContentBounds="False"
-                             ShowLocation="False"
-                             ShowCanvasDragLockButton="True"
-                             AutoSwitchCanvasDragBySelection="False"
-                             HighlightGridOrigin="False"
-                             ShowNodeShadow="True"
-                             NodeCornerRadius="10"
-                             HorizontalAlignment="Stretch"
-                             VerticalAlignment="Stretch" />
-
-            <Border HorizontalAlignment="Center"
-                    VerticalAlignment="Top"
-                    Margin="0,14,0,0"
-                    Padding="6"
-                    Background="#F3FFFFFF"
-                    BorderBrush="#26000000"
+        <Canvas x:Name="OverlayCanvas"
+                Panel.ZIndex="20">
+            <Border x:Name="PropertyFlyout"
+                    Width="370"
+                    MaxHeight="440"
+                    Padding="0"
+                    Background="#F6FFFFFF"
+                    BorderBrush="#40000000"
                     BorderThickness="1"
-                    CornerRadius="14"
-                    Panel.ZIndex="20">
+                    CornerRadius="12"
+                    Visibility="Collapsed">
                 <Border.Effect>
-                    <DropShadowEffect BlurRadius="14"
-                                      ShadowDepth="2"
-                                      Opacity="0.26"
-                                      Color="#FF404040"/>
+                    <DropShadowEffect BlurRadius="18"
+                                      ShadowDepth="3"
+                                      Opacity="0.32"
+                                      Color="#FF303030" />
                 </Border.Effect>
-                <StackPanel Orientation="Horizontal">
+                <DockPanel LastChildFill="True">
+                    <Border DockPanel.Dock="Top"
+                            Padding="12,8"
+                            Background="#EAF4FAFF"
+                            CornerRadius="12,12,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock x:Name="PropertyTitle"
+                                           VerticalAlignment="Center"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"
+                                           Foreground="#FF202020" />
+                                <TextBlock Margin="8,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Text="配置"
+                                           Foreground="#FF1672B8" />
+                            </StackPanel>
+                            <Button Grid.Column="1"
+                                    Width="28"
+                                    Height="26"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Content="&#xE711;"
+                                    FontFamily="Segoe Fluent Icons"
+                                    ToolTip="关闭属性面板"
+                                    Click="CloseProperties_Click" />
+                        </Grid>
+                    </Border>
+                    <ScrollViewer MaxHeight="390"
+                                  Padding="7"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <ContentControl x:Name="PropertyEditorHost" />
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Canvas>
+
+        <Border HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                Margin="0,14,0,0"
+                Padding="6"
+                Background="#F3FFFFFF"
+                BorderBrush="#26000000"
+                BorderThickness="1"
+                CornerRadius="14"
+                Panel.ZIndex="30">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="14"
+                                  ShadowDepth="2"
+                                  Opacity="0.26"
+                                  Color="#FF404040"/>
+            </Border.Effect>
+            <StackPanel Orientation="Horizontal">
                     <Button Style="{StaticResource ToolbarButtonStyle}"
                             Content="&#xE710;"
                             ToolTip="添加节点"
@@ -139,28 +193,7 @@
                             Minimum="0.2"
                             TickFrequency="0.05"
                             ToolTip="缩放"/>
-                </StackPanel>
-            </Border>
-        </Grid>
-
-        <Border Grid.Column="1"
-                Margin="6"
-                Background="#FCFFFFFF"
-                BorderBrush="#22000000"
-                BorderThickness="1"
-                CornerRadius="9">
-            <TabControl x:Name="SideTabs"
-                        Margin="1"
-                        Background="Transparent"
-                        BorderThickness="0">
-                <TabItem x:Name="NodeCatalogTab" Header="节点">
-                    <st:STNodeTreeView x:Name="STNodeTreeView1"/>
-                </TabItem>
-                <TabItem x:Name="PropertiesTab" Header="属性">
-                    <st:STNodePropertyGrid x:Name="STNodePropertyGrid1"
-                                           InfoFirstOnDraw="False"/>
-                </TabItem>
-            </TabControl>
+            </StackPanel>
         </Border>
     </Grid>
 </Window>

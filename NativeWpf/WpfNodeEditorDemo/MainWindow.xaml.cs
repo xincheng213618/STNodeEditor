@@ -1,6 +1,8 @@
 using Microsoft.Win32;
+using ColorVision.UI;
 using ST.Library.UI.NodeEditor;
 using System;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -8,6 +10,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using WinNodeEditorDemo.NumberNode;
+using DrawingPoint = System.Drawing.Point;
 
 namespace WpfNodeEditorDemo
 {
@@ -17,6 +20,8 @@ namespace WpfNodeEditorDemo
     public partial class MainWindow : Window
     {
         private STNodeEditorHelper? _editorHelper;
+        private readonly STNodePropertyMetadataProvider _propertyMetadataProvider = new STNodePropertyMetadataProvider();
+        private STNode? _propertyNode;
         private string? _flowFile;
         private bool _initialized;
 
@@ -33,15 +38,20 @@ namespace WpfNodeEditorDemo
             }
 
             _initialized = true;
-            STNodePropertyGrid1.Text = "Node Property";
 
             Assembly demoAssembly = Assembly.GetExecutingAssembly();
             STNodeEditorMain.LoadAssembly(demoAssembly);
-            STNodeTreeView1.LoadAssembly();
 
-            _editorHelper = new STNodeEditorHelper(STNodeEditorMain, STNodeTreeView1, STNodePropertyGrid1);
+            _editorHelper = new STNodeEditorHelper(STNodeEditorMain, demoAssembly);
             _editorHelper.PropertyEditorRequested += EditorHelper_PropertyEditorRequested;
             STNodeEditorMain.ActiveChanged += STNodeEditorMain_ActiveChanged;
+            STNodeEditorMain.SelectedChanged += STNodeEditorMain_SelectedChanged;
+            STNodeEditorMain.CanvasMoved += EditorViewportChanged;
+            STNodeEditorMain.CanvasScaled += EditorViewportChanged;
+            STNodeEditorMain.NodeLocationChanged += EditorViewportChanged;
+            STNodeEditorMain.NodeRemoved += STNodeEditorMain_NodeRemoved;
+            OverlayCanvas.SizeChanged += OverlayCanvas_SizeChanged;
+            PropertyFlyout.SizeChanged += PropertyFlyout_SizeChanged;
             DataContext = _editorHelper;
 
             if (STNodeEditorMain.Nodes.Count == 0)
@@ -93,15 +103,140 @@ namespace WpfNodeEditorDemo
 
         private void STNodeEditorMain_ActiveChanged(object? sender, EventArgs e)
         {
-            if (STNodeEditorMain.ActiveNode != null)
-            {
-                PropertiesTab.IsSelected = true;
-            }
+            ShowPropertyEditor(GetSingleSelectedNode());
+        }
+
+        private void STNodeEditorMain_SelectedChanged(object? sender, EventArgs e)
+        {
+            ShowPropertyEditor(GetSingleSelectedNode());
         }
 
         private void EditorHelper_PropertyEditorRequested(object? sender, EventArgs e)
         {
-            PropertiesTab.IsSelected = true;
+            ShowPropertyEditor(GetSingleSelectedNode());
+        }
+
+        private STNode? GetSingleSelectedNode()
+        {
+            STNode? selectedNode = null;
+            foreach (STNode node in STNodeEditorMain.Nodes)
+            {
+                if (!node.IsSelected)
+                {
+                    continue;
+                }
+
+                if (selectedNode != null)
+                {
+                    return null;
+                }
+
+                selectedNode = node;
+            }
+
+            return ReferenceEquals(selectedNode, STNodeEditorMain.ActiveNode) ? selectedNode : null;
+        }
+
+        private void ShowPropertyEditor(STNode? node)
+        {
+            if (!ReferenceEquals(_propertyNode, node))
+            {
+                if (_propertyNode != null)
+                {
+                    _propertyNode.PropertyChanged -= PropertyNode_PropertyChanged;
+                }
+
+                _propertyNode = node;
+                if (_propertyNode != null)
+                {
+                    _propertyNode.PropertyChanged += PropertyNode_PropertyChanged;
+                }
+            }
+
+            if (node == null)
+            {
+                PropertyFlyout.Visibility = Visibility.Collapsed;
+                PropertyEditorHost.Content = null;
+                return;
+            }
+
+            PropertyTitle.Text = string.IsNullOrWhiteSpace(node.Title) ? node.GetType().Name : node.Title;
+            PropertyEditorHost.Content = PropertyEditorHelper.GenPropertyEditorControl(
+                node,
+                showCategoryHeader: false,
+                metadataProvider: _propertyMetadataProvider);
+            PropertyFlyout.Visibility = Visibility.Visible;
+            UpdatePropertyEditorPosition();
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(UpdatePropertyEditorPosition));
+        }
+
+        private void PropertyNode_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (_propertyNode == null || e.PropertyName != nameof(STNode.Title))
+            {
+                return;
+            }
+
+            PropertyTitle.Text = string.IsNullOrWhiteSpace(_propertyNode.Title)
+                ? _propertyNode.GetType().Name
+                : _propertyNode.Title;
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(UpdatePropertyEditorPosition));
+        }
+
+        private void CloseProperties_Click(object sender, RoutedEventArgs e)
+        {
+            PropertyFlyout.Visibility = Visibility.Collapsed;
+        }
+
+        private void EditorViewportChanged(object? sender, EventArgs e)
+        {
+            UpdatePropertyEditorPosition();
+        }
+
+        private void STNodeEditorMain_NodeRemoved(object sender, STNodeEditorEventArgs e)
+        {
+            if (ReferenceEquals(e.Node, _propertyNode))
+            {
+                ShowPropertyEditor(null);
+            }
+        }
+
+        private void OverlayCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            UpdatePropertyEditorPosition();
+        }
+
+        private void PropertyFlyout_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            UpdatePropertyEditorPosition();
+        }
+
+        private void UpdatePropertyEditorPosition()
+        {
+            if (_propertyNode == null || PropertyFlyout.Visibility != Visibility.Visible)
+            {
+                return;
+            }
+
+            DrawingPoint nodeRight = STNodeEditorMain.CanvasToControl(
+                new DrawingPoint(_propertyNode.Left + _propertyNode.Width, _propertyNode.Top));
+            DrawingPoint nodeLeft = STNodeEditorMain.CanvasToControl(
+                new DrawingPoint(_propertyNode.Left, _propertyNode.Top));
+            double panelWidth = PropertyFlyout.ActualWidth > 0 ? PropertyFlyout.ActualWidth : PropertyFlyout.Width;
+            double panelHeight = PropertyFlyout.ActualHeight > 0 ? PropertyFlyout.ActualHeight : 320;
+            double availableWidth = OverlayCanvas.ActualWidth;
+            double availableHeight = OverlayCanvas.ActualHeight;
+
+            double left = nodeRight.X + 14;
+            if (left + panelWidth > availableWidth - 12)
+            {
+                left = nodeLeft.X - panelWidth - 14;
+            }
+            left = Math.Clamp(left, 12, Math.Max(12, availableWidth - panelWidth - 12));
+
+            double top = Math.Clamp(nodeRight.Y, 72, Math.Max(72, availableHeight - panelHeight - 12));
+            Canvas.SetLeft(PropertyFlyout, left);
+            Canvas.SetTop(PropertyFlyout, top);
         }
 
         private void AddNode_Click(object sender, RoutedEventArgs e)
@@ -156,7 +291,7 @@ namespace WpfNodeEditorDemo
 
         private void Properties_Click(object sender, RoutedEventArgs e)
         {
-            PropertiesTab.IsSelected = true;
+            ShowPropertyEditor(GetSingleSelectedNode());
         }
 
         private void Button_Click_Open(object sender, RoutedEventArgs e)
@@ -259,13 +394,23 @@ namespace WpfNodeEditorDemo
         protected override void OnClosed(EventArgs e)
         {
             STNodeEditorMain.ActiveChanged -= STNodeEditorMain_ActiveChanged;
+            STNodeEditorMain.SelectedChanged -= STNodeEditorMain_SelectedChanged;
+            STNodeEditorMain.CanvasMoved -= EditorViewportChanged;
+            STNodeEditorMain.CanvasScaled -= EditorViewportChanged;
+            STNodeEditorMain.NodeLocationChanged -= EditorViewportChanged;
+            STNodeEditorMain.NodeRemoved -= STNodeEditorMain_NodeRemoved;
+            OverlayCanvas.SizeChanged -= OverlayCanvas_SizeChanged;
+            PropertyFlyout.SizeChanged -= PropertyFlyout_SizeChanged;
+            if (_propertyNode != null)
+            {
+                _propertyNode.PropertyChanged -= PropertyNode_PropertyChanged;
+                _propertyNode = null;
+            }
             if (_editorHelper != null)
             {
                 _editorHelper.PropertyEditorRequested -= EditorHelper_PropertyEditorRequested;
             }
             _editorHelper?.Dispose();
-            STNodeTreeView1.Dispose();
-            STNodePropertyGrid1.Dispose();
             STNodeEditorMain.Dispose();
             base.OnClosed(e);
         }
